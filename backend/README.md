@@ -4,9 +4,10 @@ API em FastAPI que recebe uma pergunta do chat, gera um SQL com um LLM, consulta
 o banco e devolve a resposta em linguagem natural.
 
 ```
-pergunta ──► sql_generator (LLM) ──► sql_guard ──► database (SQLite ro) ──► answer_writer (LLM) ──► resposta
-                  ▲                       │               │
-                  └──── erro + SQL ◄──────┴───────────────┘   (1 nova tentativa de correção)
+pergunta ──► sql_generator (LLM) ──► sql_guard ──► database (SQLite ro) ──► answer_writer (LLM) ──► chart_spec ──► resposta
+                  ▲                       │               │                     texto + sugestão     valida ou
+                  └──── erro + SQL ◄──────┴───────────────┘                     de gráfico           usa a regra fixa
+                       (1 nova tentativa de correção)
 ```
 
 Baseado no backend do `projeto-aci-teste`, reorganizado em camadas e apontado
@@ -57,13 +58,31 @@ Resposta de `/api/chat`:
   "colunas": ["curso", "taxa_evasao_pct"],
   "dados": [["ENGENHARIA MECATRÔNICA", 69.9]],
   "total_linhas": 10,
-  "truncado": false
+  "truncado": false,
+  "grafico": { "tipo": "barra_horizontal", "x": "curso", "y": ["taxa_evasao_pct"], "titulo": "Taxa de evasão por curso (%)" }
 }
 ```
 
 `historico` (opcional) são as mensagens anteriores do chat; permite perguntas de
 acompanhamento como "e em 2023.1?". Erros voltam como `{ "detail": "..." }`:
 422 (SQL inválido/bloqueado), 502 (falha no provedor do LLM), 503 (sem chave ou sem banco).
+
+## Gráficos no chat
+
+`grafico` diz **como** desenhar `dados` — tipo (`barra`, `barra_horizontal`, `linha`) e
+nomes de colunas —, nunca os valores: o frontend sempre desenha o resultado do SQL.
+É `null` quando não ajuda (ex.: valor único). Decisão combinada, em `app/services/chart_spec.py`:
+
+1. **O modelo sugere** o gráfico na mesma chamada que redige a resposta (entende a
+   intenção: "evolução" → linha, "compare" → duas séries).
+2. **O backend valida**: colunas existem, `y` é numérico, `linha` só com eixo de período,
+   séries juntas só na mesma ordem de grandeza (um único eixo Y).
+3. **Regra fixa como reserva**, se a sugestão faltar ou for inválida, só em casos óbvios:
+   período + número → linha; até 15 categorias + número → barras (prefere a coluna de
+   taxa/média quando há várias).
+
+No frontend (`GraficoChat` em `src/App.tsx`) o gráfico aparece compacto no balão da
+resposta, com botão **Ampliar**; listas longas mostram as 15 primeiras categorias.
 
 ## Banco consultado
 
@@ -105,7 +124,8 @@ backend/
     services/chat_service.py   orquestra o fluxo e a nova tentativa
     services/sql_generator.py  pergunta → SQL (prompt + few-shot)
     services/sql_guard.py      validação do SQL
-    services/answer_writer.py  resultado → resposta em linguagem natural
+    services/answer_writer.py  resultado → resposta em linguagem natural + sugestão de gráfico
+    services/chart_spec.py     valida a sugestão de gráfico / regra fixa
     services/llm.py            cliente OpenAI atrás de um protocolo (fácil de trocar)
   scripts/build_database.py CSV → data/sigadash.db
   tests/                    pytest (LLM falso)
@@ -117,6 +137,7 @@ backend/
 - Validação de SQL por parser + conexão somente leitura, no lugar da lista de palavras proibidas.
 - Uma nova tentativa automática quando o SQL gerado falha, enviando o erro ao modelo.
 - Resposta sempre em linguagem natural (antes, resultados com mais de 12 células voltavam sem texto).
+- Gráficos gerados a partir do resultado de qualquer pergunta, não só os do dashboard.
 - Autenticação/contagem de tokens não foram portadas: o dashboard v2 não tem login.
   O antigo `Authorization: <id do usuário>` não era seguro; se for necessário, o
   ponto de entrada é uma dependência em `api/deps.py`.

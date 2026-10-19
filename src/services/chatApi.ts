@@ -7,6 +7,14 @@ const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 export type HistoricoItem = { role: "user" | "assistant"; text: string };
 
+/** Como desenhar `dados`: só nomes de colunas; os valores vêm sempre de `dados`. */
+export type Grafico = {
+  tipo: "barra" | "barra_horizontal" | "linha";
+  x: string;
+  y: string[];
+  titulo: string;
+};
+
 export type ChatResposta = {
   resposta: string;
   sql: string | null;
@@ -14,6 +22,7 @@ export type ChatResposta = {
   dados: unknown[][];
   total_linhas: number;
   truncado: boolean;
+  grafico: Grafico | null;
 };
 
 export async function perguntar(pergunta: string, historico: HistoricoItem[]): Promise<ChatResposta> {

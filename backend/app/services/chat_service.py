@@ -9,7 +9,8 @@ from app.core.errors import SQLExecutionError, UnsafeSQLError
 from app.db.catalog import TABELAS_PERMITIDAS, descricao_banco
 from app.db.database import QueryResult, execute_select
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.answer_writer import write_answer
+from app.services.answer_writer import resultado_vazio, write_answer
+from app.services.chart_spec import escolher_grafico
 from app.services.llm import LLMClient, LLMMessage
 from app.services.sql_generator import generate_sql
 from app.services.sql_guard import validate_select
@@ -64,12 +65,18 @@ class ChatService:
             return ChatResponse(resposta=consulta)
 
         sql, resultado = consulta
-        resposta = write_answer(self._llm, req.pergunta, sql, resultado, self._settings.max_linhas_contexto)
+        redigida = write_answer(self._llm, req.pergunta, sql, resultado, self._settings.max_linhas_contexto)
+        grafico = None
+        if not resultado_vazio(resultado):
+            # o modelo sugere; se a sugestão faltar ou não for desenhável, vale a regra fixa
+            grafico, origem = escolher_grafico(redigida.grafico_sugerido, resultado.colunas, resultado.linhas)
+            log.info("gráfico: %s (%s)", grafico.tipo if grafico else "nenhum", origem)
         return ChatResponse(
-            resposta=resposta,
+            resposta=redigida.texto,
             sql=sql,
             colunas=resultado.colunas,
             dados=resultado.linhas,
             total_linhas=len(resultado.linhas),
             truncado=resultado.truncado,
+            grafico=grafico,
         )

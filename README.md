@@ -67,8 +67,9 @@ série histórica e tabela consideram só esse conjunto.
 Os quatro filtros de cada painel ficam na mesma linha em telas largas e quebram
 em 2 ou 1 por linha em telas estreitas. O chat do Assistente IA abre sobreposto
 ao dashboard, sem redimensionar o conteúdo. Ele envia a pergunta ao backend, que
-gera um SQL, consulta o banco e devolve a resposta em texto (com uma prévia da
-tabela e o SQL usado).
+gera um SQL, consulta o banco e devolve a resposta em texto, com um gráfico
+quando ajuda (escolhido pelo modelo e validado pelo backend), uma prévia da
+tabela e o SQL usado.
 
 Rankings (Top 10), em grade fixa de 2 linhas × 3 colunas:
 

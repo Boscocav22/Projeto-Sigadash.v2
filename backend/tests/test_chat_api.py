@@ -89,3 +89,35 @@ def test_pergunta_vazia_e_rejeitada(make_client):
 def test_health(make_client):
     r = make_client(None).get("/api/health")
     assert r.json() == {"status": "ok", "banco": True, "llm_configurado": True}
+
+
+def test_grafico_sugerido_pelo_modelo(make_client):
+    llm = FakeLLM([
+        {"relevante": True, "sql": "SELECT periodo_letivo, COUNT(*) AS matriculas FROM matriculas GROUP BY periodo_letivo"},
+        {"resposta": "As matrículas variam por período.",
+         "grafico": {"tipo": "barra", "x": "periodo_letivo", "y": ["matriculas"], "titulo": "Matrículas"}},
+    ])
+    body = make_client(llm).post("/api/chat", json={"pergunta": "Matrículas por período em barras"}).json()
+    assert body["resposta"] == "As matrículas variam por período."
+    assert body["grafico"] == {"tipo": "barra", "x": "periodo_letivo", "y": ["matriculas"], "titulo": "Matrículas"}
+    assert llm.chamadas[1]["json_mode"] is True
+    assert "periodo_letivo (temporal)" in llm.chamadas[1]["messages"][0]["content"]
+
+
+def test_sugestao_invalida_cai_na_regra_fixa(make_client):
+    llm = FakeLLM([
+        {"relevante": True, "sql": "SELECT periodo_letivo, COUNT(*) AS matriculas FROM matriculas GROUP BY periodo_letivo"},
+        {"resposta": "ok", "grafico": {"tipo": "barra", "x": "coluna_que_nao_existe", "y": ["matriculas"]}},
+    ])
+    body = make_client(llm).post("/api/chat", json={"pergunta": "Evolução das matrículas"}).json()
+    assert body["grafico"]["tipo"] == "linha"
+    assert body["grafico"]["x"] == "periodo_letivo"
+
+
+def test_valor_unico_sem_grafico(make_client):
+    llm = FakeLLM([
+        {"relevante": True, "sql": "SELECT COUNT(*) AS total FROM alunos"},
+        {"resposta": "Há alunos.", "grafico": {"tipo": "barra", "x": "total", "y": ["total"]}},
+    ])
+    body = make_client(llm).post("/api/chat", json={"pergunta": "Quantos alunos?"}).json()
+    assert body["grafico"] is None
