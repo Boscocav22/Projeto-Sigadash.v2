@@ -19,6 +19,7 @@ import { CATEGORIAS } from "./types/mined";
 import { loadMinedData } from "./data/minedDataLoader";
 import { computeAlunosView, SERIE_KEY, type SemestreValor, type SeriePonto } from "./analytics/alunosView";
 import { computeDisciplinasView, disciplinasDoCurso, type RankingItem } from "./analytics/disciplinasView";
+import { perguntar, type ChatResposta, type HistoricoItem } from "./services/chatApi";
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const BLUE = "#1a6fca";
@@ -1016,25 +1017,81 @@ const NAV_ITEMS = [
   },
 ];
 
-// ── Chat Panel (chrome cosmético — respostas fixas, não conectado aos dados) ─
-type Message = { role: "user" | "assistant"; text: string };
+// ── Chat Panel (conectado ao backend: pergunta → SQL → resposta) ─────────────
+type Message = {
+  role: "user" | "assistant";
+  text: string;
+  erro?: boolean;
+  resultado?: ChatResposta;
+};
 
 const SUGESTOES = [
   "Quais cursos possuem maior taxa de evasão?",
   "Quais disciplinas possuem maior taxa de reprovação?",
   "Mostre a evolução dos concluintes.",
-  "Quais alunos apresentam maior risco?",
+  "Quantos alunos estão retidos hoje em cada curso?",
 ];
 
-function getBotReply(): string {
-  return "Este assistente ainda não está conectado aos dados reais — use os filtros dos painéis ao lado para explorar os indicadores minerados do CSV.";
+const PREVIEW_LINHAS = 5;
+
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") return v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  return String(v);
+}
+
+function ResultadoPreview({ resultado }: { resultado: ChatResposta }) {
+  // Valor único já está na resposta em texto; a tabela só ajuda com 2+ células.
+  const temTabela = resultado.dados.length > 1 || resultado.colunas.length > 1;
+  const restantes = resultado.total_linhas - PREVIEW_LINHAS;
+  const cell: CSSProperties = { padding: "4px 6px", borderBottom: `1px solid ${GRAY_200}`, whiteSpace: "nowrap", textAlign: "left" };
+
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+      {temTabela && (
+        <div style={{ overflowX: "auto", background: WHITE, border: `1px solid ${GRAY_200}`, borderRadius: 6 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 10.5, width: "100%" }}>
+            <thead>
+              <tr>
+                {resultado.colunas.map((c) => (
+                  <th key={c} style={{ ...cell, color: GRAY_600, fontWeight: 600 }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {resultado.dados.slice(0, PREVIEW_LINHAS).map((linha, i) => (
+                <tr key={i}>
+                  {linha.map((v, j) => (
+                    <td key={j} style={cell}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {restantes > 0 && (
+            <div style={{ padding: "4px 6px", fontSize: 10, color: GRAY_400 }}>
+              + {restantes}{resultado.truncado ? "+" : ""} linha(s)
+            </div>
+          )}
+        </div>
+      )}
+      {resultado.sql && (
+        <details style={{ fontSize: 10.5, color: GRAY_600 }}>
+          <summary style={{ cursor: "pointer" }}>Ver consulta SQL</summary>
+          <pre style={{ margin: "4px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 10, background: WHITE, border: `1px solid ${GRAY_200}`, borderRadius: 6, padding: 6 }}>
+            {resultado.sql}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      text: "Olá! Sou o assistente de análise acadêmica. Use os filtros dos painéis para explorar os indicadores. Como posso ajudar?",
+      text: "Olá! Sou o assistente de análise acadêmica. Pergunte sobre alunos, cursos, disciplinas, notas, evasão ou formação.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -1045,15 +1102,26 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  function send(text: string) {
-    if (!text.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", text: text.trim() }]);
+  async function send(text: string) {
+    const pergunta = text.trim();
+    if (!pergunta || typing) return;
+    // Histórico para perguntas de acompanhamento ("e em 2023.1?"): sem a saudação e sem erros.
+    const historico: HistoricoItem[] = messages
+      .slice(1)
+      .filter((m) => !m.erro)
+      .map((m) => ({ role: m.role, text: m.text }));
+    setMessages((prev) => [...prev, { role: "user", text: pergunta }]);
     setInput("");
     setTyping(true);
-    setTimeout(() => {
+    try {
+      const resultado = await perguntar(pergunta, historico);
+      setMessages((prev) => [...prev, { role: "assistant", text: resultado.resposta, resultado }]);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Erro inesperado ao consultar o assistente.";
+      setMessages((prev) => [...prev, { role: "assistant", text, erro: true }]);
+    } finally {
       setTyping(false);
-      setMessages((prev) => [...prev, { role: "assistant", text: getBotReply() }]);
-    }, 700);
+    }
   }
 
   if (!open) return null;
@@ -1144,13 +1212,16 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
                 maxWidth: "80%",
                 padding: "9px 12px",
                 borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                background: msg.role === "user" ? BLUE : GRAY_50,
-                color: msg.role === "user" ? WHITE : GRAY_800,
+                background: msg.role === "user" ? BLUE : msg.erro ? RED_LIGHT : GRAY_50,
+                color: msg.role === "user" ? WHITE : msg.erro ? RED : GRAY_800,
                 fontSize: 12.5,
                 lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                minWidth: 0,
               }}
             >
               {msg.text}
+              {msg.resultado && <ResultadoPreview resultado={msg.resultado} />}
             </div>
           </div>
         ))}
@@ -1229,7 +1300,7 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
         />
         <button
           onClick={() => send(input)}
-          disabled={!input.trim()}
+          disabled={!input.trim() || typing}
           aria-label="Enviar"
           style={{
             width: 36,

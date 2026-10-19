@@ -23,6 +23,19 @@ python python/run_mining.py          # ou: npm run mine
 npm run dev
 ```
 
+Para o chat do **Assistente IA**, suba também o backend (detalhes em
+[`backend/README.md`](backend/README.md)):
+
+```bash
+pip install -r backend/requirements.txt
+python backend/scripts/build_database.py      # CSV -> backend/data/sigadash.db
+cp backend/.env.example backend/.env          # preencha OPENAI_API_KEY
+cd backend && uvicorn app.main:app --reload   # http://localhost:8000
+```
+
+O Vite encaminha `/api` para a porta 8000. Sem o backend, o dashboard funciona
+normalmente e o chat mostra o erro de conexão.
+
 Já possui os JSONs gerados a partir do CSV atual, logo o passo 2 só é
 necessário quando `public/data/df_tabela_final.csv` for atualizado.
 Opções: `python python/run_mining.py --csv <arquivo.csv> --out <pasta>`.
@@ -53,7 +66,9 @@ série histórica e tabela consideram só esse conjunto.
 
 Os quatro filtros de cada painel ficam na mesma linha em telas largas e quebram
 em 2 ou 1 por linha em telas estreitas. O chat do Assistente IA abre sobreposto
-ao dashboard, sem redimensionar o conteúdo.
+ao dashboard, sem redimensionar o conteúdo. Ele envia a pergunta ao backend, que
+gera um SQL, consulta o banco e devolve a resposta em texto (com uma prévia da
+tabela e o SQL usado).
 
 Rankings (Top 10), em grade fixa de 2 linhas × 3 colunas:
 
@@ -77,7 +92,9 @@ src/types/mined.ts       tipos espelhando os JSONs
 src/data/minedDataLoader.ts  fetch dos 4 JSONs em paralelo
 src/analytics/alunosView.ts       recorte + contagem (alunos)
 src/analytics/disciplinasView.ts  recorte + agregação + rankings (disciplinas)
+src/services/chatApi.ts  cliente do backend do Assistente IA
 src/App.tsx              interface
+backend/                 API FastAPI do Assistente IA (pergunta → SQL → resposta)
 ```
 
 Detalhes da migração e das regras: veja `MIGRACAO.md`.
