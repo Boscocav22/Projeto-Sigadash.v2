@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   BarChart,
   Bar,
@@ -12,6 +13,7 @@ import {
   Line,
   Legend,
   Cell,
+  LabelList,
 } from "recharts";
 
 import type { Categoria, MinedData } from "./types/mined";
@@ -19,6 +21,7 @@ import { CATEGORIAS } from "./types/mined";
 import { loadMinedData } from "./data/minedDataLoader";
 import { computeAlunosView, SERIE_KEY, type SemestreValor, type SeriePonto } from "./analytics/alunosView";
 import { computeDisciplinasView, disciplinasDoCurso, type RankingItem } from "./analytics/disciplinasView";
+import { perguntar, type ChatResposta, type Grafico, type HistoricoItem } from "./services/chatApi";
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const BLUE = "#1a6fca";
@@ -1016,25 +1019,311 @@ const NAV_ITEMS = [
   },
 ];
 
-// ── Chat Panel (chrome cosmético — respostas fixas, não conectado aos dados) ─
-type Message = { role: "user" | "assistant"; text: string };
+// ── Chat Panel (conectado ao backend: pergunta → SQL → resposta) ─────────────
+type Message = {
+  role: "user" | "assistant";
+  text: string;
+  erro?: boolean;
+  resultado?: ChatResposta;
+};
 
 const SUGESTOES = [
   "Quais cursos possuem maior taxa de evasão?",
   "Quais disciplinas possuem maior taxa de reprovação?",
   "Mostre a evolução dos concluintes.",
-  "Quais alunos apresentam maior risco?",
+  "Quantos alunos estão retidos hoje em cada curso?",
 ];
 
-function getBotReply(): string {
-  return "Este assistente ainda não está conectado aos dados reais — use os filtros dos painéis ao lado para explorar os indicadores minerados do CSV.";
+const PREVIEW_LINHAS = 5;
+
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") return v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  return String(v);
+}
+
+// Gráfico do chat: o backend diz o tipo e as colunas; os valores vêm de `dados` (resultado do SQL).
+const SERIES_CORES = [BLUE, ORANGE, PURPLE]; // ordem fixa, validada para daltonismo
+const MAX_BARRAS = 15;
+
+function nomeColuna(c: string): string {
+  const t = c.replace(/_pct$/, " (%)").replace(/_/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function abreviar(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+const fmtEixo = (v: number) => v.toLocaleString("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+
+function GraficoCanvas({
+  grafico,
+  colunas,
+  dados,
+  ampliado,
+}: {
+  grafico: Grafico;
+  colunas: string[];
+  dados: unknown[][];
+  ampliado: boolean;
+}) {
+  const ix = colunas.indexOf(grafico.x);
+  const iys = grafico.y.map((y) => colunas.indexOf(y));
+  // Rankings/categorias longas ficam ilegíveis no painel: corta em 15. Séries por período ficam inteiras.
+  const porPeriodo = dados.every((l) => /^\d{4}\.\d$/.test(String(l[ix])));
+  const linhas = grafico.tipo === "linha" || porPeriodo ? dados : dados.slice(0, MAX_BARRAS);
+  const rows = linhas.map((linha) => {
+    const row: Record<string, string | number | null> = { [grafico.x]: String(linha[ix] ?? "—") };
+    grafico.y.forEach((y, k) => {
+      const v = linha[iys[k]];
+      row[y] = typeof v === "number" ? v : null;
+    });
+    return row;
+  });
+
+  const tick = { fontSize: ampliado ? 11 : 9, fill: GRAY_400 };
+  const rotulo = (max: number) => (v: string) => (ampliado ? v : abreviar(v, max));
+  const tooltip = (
+    <Tooltip
+      {...TT}
+      formatter={(v: unknown, nome: unknown) =>
+        [typeof v === "number" ? v.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : "—", String(nome)] as [string, string]
+      }
+    />
+  );
+  const legenda = grafico.y.length > 1 && <Legend wrapperStyle={{ fontSize: ampliado ? 11 : 10, color: GRAY_600 }} />;
+  const nota =
+    dados.length > rows.length ? (
+      <div style={{ fontSize: 10, color: GRAY_400, marginTop: 2 }}>
+        Mostrando {rows.length} de {dados.length} itens
+      </div>
+    ) : null;
+
+  if (grafico.tipo === "barra_horizontal") {
+    // No painel estreito o nome vai acima de cada barra (usa toda a largura); ampliado, num eixo Y largo.
+    const altura = Math.max(ampliado ? 240 : 140, rows.length * 30 + 40);
+    const rotuloAcima = (props: { x?: number | string; y?: number | string; value?: unknown }) => (
+      <text x={Number(props.x)} y={Number(props.y) - 4} fontSize={9.5} fill={GRAY_600}>
+        {abreviar(String(props.value ?? ""), 40)}
+      </text>
+    );
+    return (
+      <>
+        <ResponsiveContainer width="100%" height={altura}>
+          <BarChart
+            layout="vertical"
+            data={rows}
+            margin={{ top: ampliado ? 0 : 12, right: 12, left: 0, bottom: 0 }}
+            barCategoryGap={ampliado ? "20%" : "45%"}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke={GRAY_100} horizontal={false} />
+            <XAxis type="number" tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtEixo} />
+            <YAxis
+              type="category"
+              dataKey={grafico.x}
+              tick={tick}
+              axisLine={false}
+              tickLine={false}
+              width={ampliado ? 250 : 0}
+              hide={!ampliado}
+            />
+            {tooltip}
+            {legenda}
+            {grafico.y.map((y, k) => (
+              <Bar key={y} dataKey={y} name={nomeColuna(y)} fill={SERIES_CORES[k]} radius={[0, 4, 4, 0]} maxBarSize={24} barSize={ampliado ? undefined : 10}>
+                {!ampliado && k === 0 && <LabelList dataKey={grafico.x} content={rotuloAcima} />}
+              </Bar>
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+        {nota}
+      </>
+    );
+  }
+
+  const altura = ampliado ? 360 : 170;
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={altura}>
+        {grafico.tipo === "linha" ? (
+          <LineChart data={rows} margin={{ top: 6, right: 12, left: ampliado ? 0 : -18, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRAY_100} vertical={false} />
+            <XAxis dataKey={grafico.x} tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+            <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtEixo} />
+            {tooltip}
+            {legenda}
+            {grafico.y.map((y, k) => (
+              <Line
+                key={y}
+                type="monotone"
+                dataKey={y}
+                name={nomeColuna(y)}
+                stroke={SERIES_CORES[k]}
+                strokeWidth={2}
+                dot={rows.length <= 12 ? { r: 4 } : false}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+            ))}
+          </LineChart>
+        ) : (
+          <BarChart data={rows} margin={{ top: 6, right: 8, left: ampliado ? 0 : -18, bottom: 0 }} barCategoryGap="20%">
+            <CartesianGrid strokeDasharray="3 3" stroke={GRAY_100} vertical={false} />
+            <XAxis
+              dataKey={grafico.x}
+              tick={tick}
+              axisLine={false}
+              tickLine={false}
+              interval={ampliado ? 0 : "preserveStartEnd"}
+              tickFormatter={rotulo(10)}
+            />
+            <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtEixo} />
+            {tooltip}
+            {legenda}
+            {grafico.y.map((y, k) => (
+              <Bar key={y} dataKey={y} name={nomeColuna(y)} fill={SERIES_CORES[k]} radius={[4, 4, 0, 0]} maxBarSize={ampliado ? 36 : 22} />
+            ))}
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+      {nota}
+    </>
+  );
+}
+
+function GraficoChat({ grafico, colunas, dados }: { grafico: Grafico; colunas: string[]; dados: unknown[][] }) {
+  const [ampliado, setAmpliado] = useState(false);
+
+  useEffect(() => {
+    if (!ampliado) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setAmpliado(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ampliado]);
+
+  const titulo = grafico.titulo || `${nomeColuna(grafico.y[0])} por ${nomeColuna(grafico.x).toLowerCase()}`;
+  const botao: CSSProperties = {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    color: BLUE,
+    fontSize: 10.5,
+    padding: 0,
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div style={{ background: WHITE, border: `1px solid ${GRAY_200}`, borderRadius: 6, padding: "6px 6px 4px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: GRAY_800 }}>{titulo}</span>
+        <button type="button" onClick={() => setAmpliado(true)} style={botao}>
+          Ampliar
+        </button>
+      </div>
+      <GraficoCanvas grafico={grafico} colunas={colunas} dados={dados} ampliado={false} />
+
+      {ampliado &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={titulo}
+            onClick={() => setAmpliado(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 200,
+              background: "rgba(30,36,64,0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: WHITE,
+                borderRadius: 12,
+                boxShadow: SHADOW,
+                width: "min(860px, 100%)",
+                maxHeight: "90vh",
+                overflowY: "auto",
+                padding: "16px 20px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: GRAY_800 }}>{titulo}</span>
+                <button type="button" onClick={() => setAmpliado(false)} style={{ ...botao, fontSize: 12 }}>
+                  Fechar
+                </button>
+              </div>
+              <GraficoCanvas grafico={grafico} colunas={colunas} dados={dados} ampliado />
+            </div>
+          </div>,
+          // no body: fora do painel do chat (position: fixed + overflow), cobre a tela toda
+          document.body,
+        )}
+    </div>
+  );
+}
+
+function ResultadoPreview({ resultado }: { resultado: ChatResposta }) {
+  // Valor único já está na resposta em texto; a tabela só ajuda com 2+ células.
+  const temTabela = resultado.dados.length > 1 || resultado.colunas.length > 1;
+  const restantes = resultado.total_linhas - PREVIEW_LINHAS;
+  const cell: CSSProperties = { padding: "4px 6px", borderBottom: `1px solid ${GRAY_200}`, whiteSpace: "nowrap", textAlign: "left" };
+
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+      {resultado.grafico && (
+        <GraficoChat grafico={resultado.grafico} colunas={resultado.colunas} dados={resultado.dados} />
+      )}
+      {temTabela && (
+        <div style={{ overflowX: "auto", background: WHITE, border: `1px solid ${GRAY_200}`, borderRadius: 6 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 10.5, width: "100%" }}>
+            <thead>
+              <tr>
+                {resultado.colunas.map((c) => (
+                  <th key={c} style={{ ...cell, color: GRAY_600, fontWeight: 600 }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {resultado.dados.slice(0, PREVIEW_LINHAS).map((linha, i) => (
+                <tr key={i}>
+                  {linha.map((v, j) => (
+                    <td key={j} style={cell}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {restantes > 0 && (
+            <div style={{ padding: "4px 6px", fontSize: 10, color: GRAY_400 }}>
+              + {restantes}{resultado.truncado ? "+" : ""} linha(s)
+            </div>
+          )}
+        </div>
+      )}
+      {resultado.sql && (
+        <details style={{ fontSize: 10.5, color: GRAY_600 }}>
+          <summary style={{ cursor: "pointer" }}>Ver consulta SQL</summary>
+          <pre style={{ margin: "4px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 10, background: WHITE, border: `1px solid ${GRAY_200}`, borderRadius: 6, padding: 6 }}>
+            {resultado.sql}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      text: "Olá! Sou o assistente de análise acadêmica. Use os filtros dos painéis para explorar os indicadores. Como posso ajudar?",
+      text: "Olá! Sou o assistente de análise acadêmica. Pergunte sobre alunos, cursos, disciplinas, notas, evasão ou formação.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -1045,15 +1334,26 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  function send(text: string) {
-    if (!text.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", text: text.trim() }]);
+  async function send(text: string) {
+    const pergunta = text.trim();
+    if (!pergunta || typing) return;
+    // Histórico para perguntas de acompanhamento ("e em 2023.1?"): sem a saudação e sem erros.
+    const historico: HistoricoItem[] = messages
+      .slice(1)
+      .filter((m) => !m.erro)
+      .map((m) => ({ role: m.role, text: m.text }));
+    setMessages((prev) => [...prev, { role: "user", text: pergunta }]);
     setInput("");
     setTyping(true);
-    setTimeout(() => {
+    try {
+      const resultado = await perguntar(pergunta, historico);
+      setMessages((prev) => [...prev, { role: "assistant", text: resultado.resposta, resultado }]);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Erro inesperado ao consultar o assistente.";
+      setMessages((prev) => [...prev, { role: "assistant", text, erro: true }]);
+    } finally {
       setTyping(false);
-      setMessages((prev) => [...prev, { role: "assistant", text: getBotReply() }]);
-    }, 700);
+    }
   }
 
   if (!open) return null;
@@ -1141,16 +1441,21 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
             {msg.role === "assistant" && botAvatar}
             <div
               style={{
-                maxWidth: "80%",
+                // respostas com gráfico usam mais largura do painel
+                maxWidth: msg.resultado?.grafico ? "88%" : "80%",
+                flex: msg.resultado?.grafico ? 1 : undefined,
                 padding: "9px 12px",
                 borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                background: msg.role === "user" ? BLUE : GRAY_50,
-                color: msg.role === "user" ? WHITE : GRAY_800,
+                background: msg.role === "user" ? BLUE : msg.erro ? RED_LIGHT : GRAY_50,
+                color: msg.role === "user" ? WHITE : msg.erro ? RED : GRAY_800,
                 fontSize: 12.5,
                 lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                minWidth: 0,
               }}
             >
               {msg.text}
+              {msg.resultado && <ResultadoPreview resultado={msg.resultado} />}
             </div>
           </div>
         ))}
@@ -1229,7 +1534,7 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
         />
         <button
           onClick={() => send(input)}
-          disabled={!input.trim()}
+          disabled={!input.trim() || typing}
           aria-label="Enviar"
           style={{
             width: 36,
