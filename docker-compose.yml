@@ -1,12 +1,57 @@
+# Publicação do Sigadash.v2 (dashboard + Assistente IA).
+#
+#   cp .env.example .env        # defina a senha e o modelo
+#   docker compose up -d --build
+#
+# Com Ollama no próprio servidor:  docker compose --profile ollama up -d --build
+# Com Ollama e GPU NVIDIA:         docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile ollama up -d --build
+# Detalhes em deploy/README.md.
+
 services:
+  web:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PORTA:-8080}:80"
+    environment:
+      SIGADASH_USUARIO: ${SIGADASH_USUARIO:-sigadash}
+      SIGADASH_SENHA: ${SIGADASH_SENHA:?Defina SIGADASH_SENHA no arquivo .env}
+      CHAT_LIMITE_POR_MINUTO: ${CHAT_LIMITE_POR_MINUTO:-10}
+      CHAT_RAJADA: ${CHAT_RAJADA:-5}
+
+  # Sem "ports": só o nginx (serviço web) acessa o backend.
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - path: backend/.env
-        required: false
+    restart: unless-stopped
     environment:
-      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-    ports:
-      - "8000:8000"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-180}
+    extra_hosts:
+      # permite usar um Ollama instalado direto no servidor: OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Opcional: modelo local. Só sobe com --profile ollama; a porta 11434 não é exposta.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

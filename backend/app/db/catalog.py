@@ -30,8 +30,9 @@ TABLE alunos  -- uma linha por aluno
   semestre_evasao    INTEGER  -- semestre cursado na evasão
   tipo_evasao        TEXT     -- tipo de saída (ex.: 'EXCLUÍDO', 'DESVINCULADO')
   formou             INTEGER  -- 1 se o aluno se formou
-  periodo_formacao   TEXT     -- período de referência da formação
-  semestre_formacao  INTEGER  -- semestre cursado na formação
+  periodo_formacao   TEXT     -- último período cursado ANTES da formação (usado só para "em que semestre
+                              --   os alunos se formam"); NÃO é o período em que o aluno consta como FORMADO
+  semestre_formacao  INTEGER  -- semestre cursado nesse período de referência
 
 TABLE alunos_periodo  -- uma linha por (aluno, período letivo)
   codigo_estudante  TEXT  -- FK alunos.codigo_estudante
@@ -72,7 +73,11 @@ REGRAS_NEGOCIO = """\
 - Taxa de aprovação de uma disciplina = SUM(aprovado) ÷ (SUM(aprovado) + SUM(reprovado));
   taxa de reprovação = SUM(reprovado) ÷ (SUM(aprovado) + SUM(reprovado)).
 - Médias de nota e de faltas consideram só valores não nulos (AVG já ignora NULL).
-- Concluintes/formados por período: alunos.periodo_formacao.
+- Séries históricas por período (ativos, evadidos, retidos, formados/concluintes por período), iguais ao
+  gráfico "Séries Históricas" do dashboard: conte alunos_periodo por categoria em cada periodo_letivo, com
+  SUM(categoria = 'FORMADO') etc. agrupado por periodo_letivo (assim períodos com zero também aparecem).
+  Não use alunos.periodo_formacao nem alunos.periodo_evasao para séries por período.
+- alunos.semestre_formacao / semestre_evasao servem para "em que semestre cursado os alunos se formam/evadem".
 """
 
 

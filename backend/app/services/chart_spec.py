@@ -76,7 +76,15 @@ def validar_grafico(sugestao: Any, colunas: list[str], dados: list[list[Any]]) -
         return None
     if len(spec.y) > 1 and not _mesma_escala(colunas, dados, spec.y):
         return None
+    if spec.tipo == "barra" and tipos[spec.x] == "categorica" and _rotulo_longo(colunas, dados, spec.x):
+        # nomes longos (cursos, disciplinas) se sobrepõem no eixo X de barras verticais
+        spec = spec.model_copy(update={"tipo": "barra_horizontal"})
     return spec
+
+
+def _rotulo_longo(colunas: list[str], dados: list[list[Any]], coluna: str) -> bool:
+    rotulos = [str(v) for v in _valores(dados, colunas.index(coluna))]
+    return max(map(len, rotulos), default=0) > ROTULO_LONGO
 
 
 def _titulo(y: str, x: str) -> str:
@@ -110,8 +118,7 @@ def grafico_por_regra(colunas: list[str], dados: list[list[Any]]) -> GraficoSpec
 
     categorica = next((c for c in colunas if tipos[c] == "categorica"), None)
     if categorica and len(dados) <= MAX_CATEGORIAS_REGRA:
-        rotulos = [str(v) for v in _valores(dados, colunas.index(categorica))]
-        tipo = "barra_horizontal" if max(map(len, rotulos), default=0) > ROTULO_LONGO else "barra"
+        tipo = "barra_horizontal" if _rotulo_longo(colunas, dados, categorica) else "barra"
         return GraficoSpec(tipo=tipo, x=categorica, y=[y], titulo=_titulo(y, categorica))
     return None
 

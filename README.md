@@ -36,6 +36,14 @@ cd backend && uvicorn app.main:app --reload   # http://localhost:8000
 O Vite encaminha `/api` para a porta 8000. Sem o backend, o dashboard funciona
 normalmente e o chat mostra o erro de conexão.
 
+Para **publicar num servidor** (Docker, senha de acesso, compressão dos dados e
+limite de perguntas ao chat, com OpenAI ou Ollama), veja [`deploy/README.md`](deploy/README.md):
+
+```bash
+cp .env.example .env     # senha e modelo
+docker compose up -d --build
+```
+
 Já possui os JSONs gerados a partir do CSV atual, logo o passo 2 só é
 necessário quando `public/data/df_tabela_final.csv` for atualizado.
 Opções: `python python/run_mining.py --csv <arquivo.csv> --out <pasta>`.

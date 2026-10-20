@@ -44,8 +44,14 @@ EXEMPLOS: list[tuple[str, str]] = [
     ),
     (
         "Mostre a evolução dos concluintes.",
-        "SELECT periodo_formacao AS periodo_letivo, COUNT(*) AS concluintes FROM alunos"
-        " WHERE formou = 1 GROUP BY periodo_formacao ORDER BY periodo_formacao",
+        "SELECT periodo_letivo, SUM(categoria = 'FORMADO') AS formados FROM alunos_periodo"
+        " GROUP BY periodo_letivo ORDER BY periodo_letivo",
+    ),
+    (
+        "Gráfico de evadidos de Engenharia Civil de 2020.1 a 2023.2",
+        "SELECT periodo_letivo, SUM(categoria = 'EVADIDO') AS evadidos FROM alunos_periodo"
+        " WHERE curso_busca LIKE '%ENGENHARIA CIVIL%' AND periodo_letivo BETWEEN '2020.1' AND '2023.2'"
+        " GROUP BY periodo_letivo ORDER BY periodo_letivo",
     ),
     (
         "Quantos alunos ativos tinha Engenharia Civil em 2022.2?",

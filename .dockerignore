@@ -6,4 +6,4 @@ dist
 backend/.env
 backend/.venv
 backend/data/*.db
-public/data/generated
+.env
