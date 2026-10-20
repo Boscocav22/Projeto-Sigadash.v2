@@ -23,6 +23,19 @@ EXEMPLOS: list[tuple[str, str]] = [
         " FROM alunos GROUP BY curso ORDER BY taxa_evasao_pct DESC",
     ),
     (
+        "Qual curso teve maior taxa de evasão no período 2024.1?",
+        "SELECT curso, COUNT(*) AS total_alunos, SUM(categoria = 'EVADIDO') AS evadidos,"
+        " ROUND(100.0 * SUM(categoria = 'EVADIDO') / COUNT(*), 1) AS taxa_evasao_pct"
+        " FROM alunos_periodo WHERE periodo_letivo = '2024.1'"
+        " GROUP BY curso ORDER BY taxa_evasao_pct DESC",
+    ),
+    (
+        "Qual a taxa de retenção de Engenharia Civil em 2023.2?",
+        "SELECT COUNT(*) AS total_alunos, SUM(categoria = 'RETIDO') AS retidos,"
+        " ROUND(100.0 * SUM(categoria = 'RETIDO') / COUNT(*), 1) AS taxa_retencao_pct"
+        " FROM alunos_periodo WHERE curso_busca LIKE '%ENGENHARIA CIVIL%' AND periodo_letivo = '2023.2'",
+    ),
+    (
         "Quais disciplinas possuem maior taxa de reprovação?",
         "SELECT disciplina, SUM(aprovado) + SUM(reprovado) AS avaliados,"
         " ROUND(100.0 * SUM(reprovado) / (SUM(aprovado) + SUM(reprovado)), 1) AS taxa_reprovacao_pct"
@@ -60,6 +73,9 @@ Regras para o SQL:
 - Dê nomes claros às colunas calculadas (AS media_turma, AS taxa_evasao_pct...).
 - Arredonde médias e taxas com ROUND(..., 2) ou ROUND(..., 1); taxas em porcentagem.
 - Para rankings ou listas longas, ordene e use LIMIT (padrão 10, a não ser que o usuário peça outro número).
+- Em perguntas de "qual teve o maior/menor...", devolva o ranking ordenado (não LIMIT 1), para a resposta
+  mostrar a comparação e revelar empates.
+- Em taxas, traga também o numerador e o total (ex.: evadidos e total_alunos), para conferência.
 - Nunca selecione codigo_estudante isolado sem agregação, a menos que o usuário peça alunos específicos.
 
 Exemplos:

@@ -62,8 +62,13 @@ REGRAS_NEGOCIO = """\
 - Situação do aluno: FORMADO > EVADIDO > RETIDO > ATIVO. RETIDO = aluno ativo que já passou do 13º semestre.
 - "Alunos ativos/evadidos/retidos/formados" sem período informado = alunos.situacao_atual.
   Com período informado, use alunos_periodo.categoria no período pedido.
-- Taxa de evasão de um grupo = alunos com evadiu = 1 ÷ total de alunos do grupo.
-  Taxa de formação = alunos com formou = 1 ÷ total de alunos do grupo.
+- Taxa de evasão de um grupo (histórico todo, sem período) = alunos com evadiu = 1 ÷ total de alunos do grupo
+  (tabela alunos). Taxa de formação = alunos com formou = 1 ÷ total de alunos do grupo.
+- Taxa de evasão/retenção/atividade/formação EM UM PERÍODO (igual ao dashboard) = alunos_periodo com
+  categoria = 'EVADIDO' (ou 'RETIDO', 'ATIVO', 'FORMADO') naquele periodo_letivo ÷ TODOS os alunos de
+  alunos_periodo naquele periodo_letivo. Não use periodo_evasao/periodo_formacao para calcular taxas.
+- Numa taxa, o denominador é sempre o grupo inteiro: nunca filtre (WHERE) pela mesma condição do
+  numerador, senão a taxa dá 100%. Conte o numerador com SUM(condição) ou SUM(CASE WHEN ... END).
 - Taxa de aprovação de uma disciplina = SUM(aprovado) ÷ (SUM(aprovado) + SUM(reprovado));
   taxa de reprovação = SUM(reprovado) ÷ (SUM(aprovado) + SUM(reprovado)).
 - Médias de nota e de faltas consideram só valores não nulos (AVG já ignora NULL).
