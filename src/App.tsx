@@ -1084,6 +1084,11 @@ function GraficoCanvas({
 
   const tick = { fontSize: ampliado ? 11 : 9, fill: GRAY_400 };
   const rotulo = (max: number) => (v: string) => (ampliado ? v : abreviar(v, max));
+  const maiorRotulo = Math.max(0, ...rows.map((r) => String(r[grafico.x]).length));
+  // Mesmo que chegue "barra" com nomes longos, desenha na horizontal: no eixo X eles se sobrepõem.
+  const tipo = grafico.tipo === "barra" && !porPeriodo && maiorRotulo > 14 ? "barra_horizontal" : grafico.tipo;
+  // Ampliado: com muitos itens ou rótulos médios, inclina os rótulos do eixo X em vez de sobrepor.
+  const inclinar = ampliado && rows.length * Math.max(maiorRotulo, 4) * 7 > 760;
   const tooltip = (
     <Tooltip
       {...TT}
@@ -1100,7 +1105,7 @@ function GraficoCanvas({
       </div>
     ) : null;
 
-  if (grafico.tipo === "barra_horizontal") {
+  if (tipo === "barra_horizontal") {
     // No painel estreito o nome vai acima de cada barra (usa toda a largura); ampliado, num eixo Y largo.
     const altura = Math.max(ampliado ? 240 : 140, rows.length * 30 + 40);
     const rotuloAcima = (props: { x?: number | string; y?: number | string; value?: unknown }) => (
@@ -1146,7 +1151,7 @@ function GraficoCanvas({
   return (
     <>
       <ResponsiveContainer width="100%" height={altura}>
-        {grafico.tipo === "linha" ? (
+        {tipo === "linha" ? (
           <LineChart data={rows} margin={{ top: 6, right: 12, left: ampliado ? 0 : -18, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRAY_100} vertical={false} />
             <XAxis dataKey={grafico.x} tick={tick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
@@ -1175,8 +1180,12 @@ function GraficoCanvas({
               tick={tick}
               axisLine={false}
               tickLine={false}
-              interval={ampliado ? 0 : "preserveStartEnd"}
+              interval={ampliado && rows.length <= 40 ? 0 : "preserveStartEnd"}
+              minTickGap={4}
               tickFormatter={rotulo(10)}
+              angle={inclinar ? -35 : 0}
+              textAnchor={inclinar ? "end" : "middle"}
+              height={inclinar ? Math.min(110, 18 + maiorRotulo * 5) : 30}
             />
             <YAxis tick={tick} axisLine={false} tickLine={false} tickFormatter={fmtEixo} />
             {tooltip}

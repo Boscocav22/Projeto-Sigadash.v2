@@ -91,3 +91,13 @@ def test_escolher_prefere_o_modelo():
     sugestao = {"tipo": "barra", "x": "periodo_letivo", "y": ["concluintes"], "titulo": "Concluintes"}
     spec, origem = escolher_grafico(sugestao, CONCLUINTES_COLS, CONCLUINTES)
     assert origem == "modelo" and spec and spec.tipo == "barra"
+
+
+def test_barra_vertical_com_nomes_longos_vira_horizontal():
+    spec = validar_grafico({"tipo": "barra", "x": "curso", "y": ["taxa_evasao_pct"]}, EVASAO_COLS, EVASAO)
+    assert spec and spec.tipo == "barra_horizontal"
+
+
+def test_barra_vertical_com_nomes_curtos_continua_vertical():
+    spec = validar_grafico({"tipo": "barra", "x": "curso", "y": ["aprovados", "reprovados"]}, APROV_COLS, APROV)
+    assert spec and spec.tipo == "barra"
