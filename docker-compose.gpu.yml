@@ -1,0 +1,11 @@
+# Acrescenta a GPU NVIDIA ao serviço ollama (requer o NVIDIA Container Toolkit no servidor):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile ollama up -d --build
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -33,7 +33,7 @@ Com `npm run dev` na raiz, o Vite encaminha `/api` para `http://localhost:8000`,
 então o chat do dashboard já fala com o backend. Em produção, defina
 `VITE_API_URL` no build do frontend e `CORS_ORIGINS` no backend.
 
-Docker (a partir da raiz): `docker compose up --build` — o banco é gerado dentro da imagem.
+Publicação com Docker (nginx + senha + limite do chat): veja [`../deploy/README.md`](../deploy/README.md). O banco é gerado dentro da imagem do backend.
 
 Testes (usam um LLM falso e uma amostra do CSV, não precisam de chave):
 

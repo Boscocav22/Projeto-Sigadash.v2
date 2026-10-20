@@ -121,3 +121,8 @@ def test_valor_unico_sem_grafico(make_client):
     ])
     body = make_client(llm).post("/api/chat", json={"pergunta": "Quantos alunos?"}).json()
     assert body["grafico"] is None
+
+
+def test_variaveis_vazias_do_compose_viram_none(db_path):
+    s = Settings(_env_file=None, openai_api_key="", openai_base_url="  ", database_path=db_path)
+    assert s.openai_api_key is None and s.openai_base_url is None

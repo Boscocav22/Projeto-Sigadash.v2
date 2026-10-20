@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -31,6 +32,12 @@ class Settings(BaseSettings):
 
     # Origens separadas por vírgula; "*" libera todas.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @field_validator("openai_api_key", "openai_base_url", mode="before")
+    @classmethod
+    def _vazio_vira_none(cls, v: object) -> object:
+        # o docker compose passa "" quando a variável não foi definida no .env
+        return None if isinstance(v, str) and not v.strip() else v
 
     @property
     def cors_origins_list(self) -> list[str]:
