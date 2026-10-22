@@ -22,6 +22,8 @@ import { loadMinedData } from "./data/minedDataLoader";
 import { computeAlunosView, SERIE_KEY, type SemestreValor, type SeriePonto } from "./analytics/alunosView";
 import { computeDisciplinasView, disciplinasDoCurso, type RankingItem } from "./analytics/disciplinasView";
 import { perguntar, type ChatResposta, type Grafico, type HistoricoItem } from "./services/chatApi";
+import { buscarProjecao, type ProjecaoResposta } from "./services/projecaoApi";
+import { computeProjecaoView } from "./analytics/projecaoView";
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const BLUE = "#1a6fca";
@@ -617,8 +619,151 @@ function PanelHeader({ title, subtitle, children }: { title: string; subtitle: s
   );
 }
 
+// ── KPI cards (total + taxa por categoria) ───────────────────────────────────
+type KpiCardInfo = { key: string; label: string; value: string; cat: Categoria };
+
+function KpiGrid({ cards, colunas }: { cards: KpiCardInfo[]; colunas: number }) {
+  return (
+    <div
+      className="kpi-grid"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${colunas}, minmax(0, 220px))`,
+        gap: 14,
+        marginBottom: 24,
+      }}
+    >
+      {cards.map((k) => (
+        <div
+          key={k.key}
+          style={{
+            background: CAT_META[k.cat].bg,
+            borderWidth: "1px",
+            borderStyle: "solid",
+            borderColor: CAT_META[k.cat].border,
+            borderRadius: 12,
+            padding: "12px 18px",
+          }}
+        >
+          <div style={{ fontSize: 15, color: GRAY_600, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>
+            {k.label}
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: GRAY_800, lineHeight: 1 }}>{k.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SecaoTitulo({ titulo, detalhe }: { titulo: string; detalhe?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: GRAY_800 }}>{titulo}</div>
+      {detalhe && <div style={{ fontSize: 12, color: GRAY_400 }}>{detalhe}</div>}
+    </div>
+  );
+}
+
+// ── Projeção do próximo semestre (calculada no backend ao iniciar) ───────────
+type ProjecaoEstado =
+  | { fase: "carregando" }
+  | { fase: "indisponivel" }
+  | { fase: "resposta"; resposta: ProjecaoResposta };
+
+/** Busca a projeção uma vez e repete enquanto o backend ainda está calculando (ou fora do ar). */
+function useProjecao(): ProjecaoEstado {
+  const [estado, setEstado] = useState<ProjecaoEstado>({ fase: "carregando" });
+
+  useEffect(() => {
+    let cancelado = false;
+    let timer: number | undefined;
+
+    async function consultar() {
+      let proxima: number | null = null;
+      try {
+        const resposta = await buscarProjecao();
+        if (cancelado) return;
+        setEstado({ fase: "resposta", resposta });
+        if (resposta.status === "processando") proxima = 3000;
+      } catch {
+        if (cancelado) return;
+        setEstado({ fase: "indisponivel" });
+        proxima = 15000;
+      }
+      if (proxima !== null) timer = window.setTimeout(consultar, proxima);
+    }
+
+    consultar();
+    return () => {
+      cancelado = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  return estado;
+}
+
+function ProjecaoSecao({
+  estado,
+  curso,
+  indicadoresSelecionados,
+}: {
+  estado: ProjecaoEstado;
+  curso: string | null;
+  indicadoresSelecionados: Categoria[];
+}) {
+  const resposta = estado.fase === "resposta" ? estado.resposta : null;
+  const linhas = resposta?.linhas ?? [];
+  const view = computeProjecaoView(linhas, { curso, indicadoresSelecionados });
+  const temDados = linhas.length > 0;
+
+  let aviso: string | null = null;
+  if (estado.fase === "carregando" || resposta?.status === "processando") {
+    aviso = temDados ? "Atualizando projeção…" : "Calculando projeção… (o modelo leva cerca de 30 segundos)";
+  } else if (estado.fase === "indisponivel") {
+    aviso = "Projeção indisponível: não foi possível conectar ao backend.";
+  } else if (resposta?.status === "erro") {
+    aviso = `Projeção indisponível: ${resposta.mensagem ?? "erro no cálculo"}`;
+  } else if (resposta?.status === "desativado") {
+    aviso = "A projeção está desativada no backend.";
+  }
+
+  const erroDoCurso = curso !== null ? resposta?.erros.find((e) => e.curso === curso) : undefined;
+  if (temDados && view.total === 0 && !aviso) {
+    aviso = erroDoCurso ? `Sem projeção para este curso: ${erroDoCurso.erro}` : "Sem projeção para este curso.";
+  }
+
+  const vazio = !temDados || view.total === 0;
+  const cards: KpiCardInfo[] = [
+    ...view.kpis.map((k) => ({
+      key: `p-${k.categoria}-total`,
+      label: CAT_META[k.categoria].total,
+      value: vazio ? "—" : fmtInt(k.quantidade),
+      cat: k.categoria,
+    })),
+    ...view.kpis.map((k) => ({
+      key: `p-${k.categoria}-taxa`,
+      label: CAT_META[k.categoria].taxa,
+      value: vazio ? "—" : fmtPct(k.taxa),
+      cat: k.categoria,
+    })),
+  ];
+
+  const base = view.periodosBase.length > 0 ? ` · base ${view.periodosBase.join(", ")}` : "";
+  return (
+    <>
+      <SecaoTitulo
+        titulo={`Projeção — ${resposta?.periodo_alvo ?? "…"}`}
+        detalhe={`Previsão do modelo para o próximo semestre${base} · não muda com o filtro de período letivo`}
+      />
+      {aviso && <div style={{ fontSize: 12.5, color: GRAY_600, marginTop: -4, marginBottom: 10 }}>{aviso}</div>}
+      <KpiGrid cards={cards} colunas={view.kpis.length} />
+    </>
+  );
+}
+
 // ── Painel: Análise de Alunos ────────────────────────────────────────────────
-function AlunasPanel({ data }: { data: MinedData }) {
+function AlunasPanel({ data, projecao }: { data: MinedData; projecao: ProjecaoEstado }) {
   const [curso, setCurso] = useState(TODOS_CURSOS);
   const [periodos, setPeriodos] = useState<string[]>([]);
   const [indicadoresSelecionados, setIndicadoresSelecionados] = useState<Categoria[]>([]);
@@ -684,35 +829,15 @@ function AlunasPanel({ data }: { data: MinedData }) {
         />
       </PanelHeader>
 
+      <ProjecaoSecao
+        estado={projecao}
+        curso={curso === TODOS_CURSOS ? null : curso}
+        indicadoresSelecionados={indicadoresSelecionados}
+      />
+
       {/* KPI cards: um par (total + taxa) por indicador visível */}
-      <div
-        className="kpi-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${view.kpis.length}, minmax(0, 220px))`,
-          gap: 14,
-          marginBottom: 24,
-        }}
-      >
-        {kpiCards.map((k) => (
-          <div
-            key={k.key}
-            style={{
-              background: CAT_META[k.cat].bg,
-              borderWidth: "1px",
-              borderStyle: "solid",
-              borderColor: CAT_META[k.cat].border,
-              borderRadius: 12,
-              padding: "12px 18px",
-            }}
-          >
-            <div style={{ fontSize: 15, color: GRAY_600, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>
-              {k.label}
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: GRAY_800, lineHeight: 1 }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
+      <SecaoTitulo titulo="Dados observados" />
+      <KpiGrid cards={kpiCards} colunas={view.kpis.length} />
 
       {view.totalAlunos === 0 && (
         <Card style={{ marginBottom: 20 }}>
@@ -1571,6 +1696,7 @@ function ChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
 // ── Root App ───────────────────────────────────────────────────────────────
 export default function App() {
   const [data, setData] = useState<MinedData | null>(null);
+  const projecao = useProjecao();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeNav, setActiveNav] = useState("alunos");
   const [chatOpen, setChatOpen] = useState(true);
@@ -1716,7 +1842,7 @@ export default function App() {
             </div>
           )}
           {!loadError && !data && <div style={{ padding: 24, color: GRAY_400, fontSize: 13 }}>Carregando dados minerados...</div>}
-          {!loadError && data && activeNav === "alunos" && <AlunasPanel data={data} />}
+          {!loadError && data && activeNav === "alunos" && <AlunasPanel data={data} projecao={projecao} />}
           {!loadError && data && activeNav === "disciplinas" && <DisciplinasPanel data={data} />}
         </div>
 

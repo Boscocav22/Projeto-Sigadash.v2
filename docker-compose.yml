@@ -35,6 +35,10 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-180}
+      # Cache da projeção fora da imagem: reiniciar o container não retreina o modelo.
+      PROJECAO_CACHE_PATH: /app/cache/projecao_cache.json
+    volumes:
+      - projecao:/app/cache
     extra_hosts:
       # permite usar um Ollama instalado direto no servidor: OPENAI_BASE_URL=http://host.docker.internal:11434/v1
       - "host.docker.internal:host-gateway"
@@ -55,3 +59,4 @@ services:
 
 volumes:
   ollama:
+  projecao:

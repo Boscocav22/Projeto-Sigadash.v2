@@ -24,17 +24,22 @@ def _load_build_module():
 
 
 @pytest.fixture(scope="session")
-def db_path(tmp_path_factory) -> Path:
-    """Banco gerado pelo script real a partir de uma amostra do CSV."""
-    tmp = tmp_path_factory.mktemp("db")
-    amostra = tmp / "amostra.csv"
+def amostra_csv(tmp_path_factory) -> Path:
+    """As primeiras linhas do CSV real (alunos completos, ordenados por código)."""
+    amostra = tmp_path_factory.mktemp("amostra") / "amostra.csv"
     with CSV.open(encoding="utf-8-sig") as src, amostra.open("w", encoding="utf-8") as dst:
         for i, linha in enumerate(src):
             if i > AMOSTRA_LINHAS:
                 break
             dst.write(linha)
-    out = tmp / "sigadash.db"
-    _load_build_module().build(amostra, out)
+    return amostra
+
+
+@pytest.fixture(scope="session")
+def db_path(tmp_path_factory, amostra_csv) -> Path:
+    """Banco gerado pelo script real a partir de uma amostra do CSV."""
+    out = tmp_path_factory.mktemp("db") / "sigadash.db"
+    _load_build_module().build(amostra_csv, out)
     return out
 
 

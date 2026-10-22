@@ -80,6 +80,15 @@ no firewall.
 
 Abra `http://IP-DO-SERVIDOR:8080` e entre com o usuário e a senha do `.env`.
 
+## Projeção (algoritmo de previsão)
+
+O backend calcula a projeção do próximo semestre ao iniciar, a partir do CSV que vai dentro
+da imagem. Na primeira subida isso leva ~25 s com 4 núcleos (≈ 0,5 GB de memória); nesse
+tempo o dashboard já funciona e os cards da projeção mostram "Calculando projeção…".
+O resultado fica no volume `projecao`, então reiniciar o container não retreina o modelo;
+um CSV novo (novo build) recalcula sozinho. Para forçar:
+`curl -u usuario:senha -X POST http://IP-DO-SERVIDOR:8080/api/projecao/atualizar`.
+
 ## Operação
 
 | Tarefa | Comando |

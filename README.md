@@ -50,6 +50,14 @@ Opções: `python python/run_mining.py --csv <arquivo.csv> --out <pasta>`.
 
 ## Painel de Alunos
 
+No topo, **Projeção — 2026.1**: oito cards (totais e taxas de Ativos, Evasão, Retenção e
+Formados) previstos para o semestre seguinte ao último do CSV pelo algoritmo do notebook
+`regress_copy_6.ipynb`, que o backend executa ao iniciar (veja `backend/README.md`). Abaixo,
+**Dados observados**: os indicadores do histórico, como antes. A projeção acompanha os filtros
+de Curso e Indicador e ignora o de Período Letivo. Sem o backend, os dados observados continuam
+funcionando e a seção de projeção avisa que está indisponível.
+
+
 Filtros: **Polo**, **Período Letivo** (seleção múltipla), **Curso** e **Indicador** (seleção múltipla).
 
 - **Período Letivo (multi-seleção)** — com nenhum período marcado ("Todos os

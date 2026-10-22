@@ -84,6 +84,42 @@ nomes de colunas —, nunca os valores: o frontend sempre desenha o resultado do
 No frontend (`GraficoChat` em `src/App.tsx`) o gráfico aparece compacto no balão da
 resposta, com botão **Ampliar**; listas longas mostram as 15 primeiras categorias.
 
+## Projeção do próximo semestre
+
+Algoritmo do notebook `regress_copy_6.ipynb` (Random Forest de transição, um modelo por
+curso), portado para `app/projecao/` e executado **pelo próprio backend** a partir de
+`public/data/df_tabela_final.csv`.
+
+```
+API inicia ──► thread em segundo plano ──► cache válido? ──sim──► carrega (≈ instantâneo)
+                                              │ não
+                                              ▼
+              ler CSV ─► preparo (células 3–8) ─► run_por_curso (célula 10) ─► grava cache
+```
+
+| Arquivo | O que faz |
+|---|---|
+| `projecao/classificador.py` | classe `ClassificadorAcademico` do notebook, sem alterações (só sem a avaliação walk-forward) |
+| `projecao/preparo.py` | células 3–8; situação acadêmica com as **categorias do dashboard** e a regra dos 13 semestres |
+| `projecao/calculo.py` | lê o CSV, define o período-alvo (seguinte ao último do CSV) e chama `run_por_curso` |
+| `projecao/servico.py` | execução em segundo plano, estado, cache em disco e atualização |
+
+- `GET /api/projecao` → `status` (`processando` / `pronto` / `erro`), `periodo_alvo` e as linhas
+  `curso, periodo_base, periodo_alvo, situacao, quantidade, proporcao`.
+- `POST /api/projecao/atualizar` → recalcula ignorando o cache.
+- **Cache** (`data/projecao_cache.json`, ~6 KB): reaproveitado só se o CSV, o código do algoritmo
+  e os períodos ignorados forem os mesmos. Primeiro cálculo: ~25 s e ~0,5 GB de memória (4 núcleos).
+- 2025.1 e 2025.2 ficam fora do treino e da coorte-base (`PROJECAO_PERIODOS_IGNORADOS`).
+- `PROJECAO_ATIVA=false` desliga o cálculo.
+
+Testes do algoritmo com o CSV completo (~50 s), incluindo a prova de que, com as categorias
+originais do notebook, a porta gera exatamente o `resumo_projetado_todos_os_cursos.csv`
+(`tests/dados/resumo_projetado_notebook.csv`):
+
+```bash
+cd backend && RODAR_TESTES_LENTOS=1 python -m pytest tests/test_projecao_calculo.py
+```
+
 ## Banco consultado
 
 Gerado por `scripts/build_database.py` reaproveitando a mineração de `python/`,
@@ -126,6 +162,7 @@ backend/
     services/sql_guard.py      validação do SQL
     services/answer_writer.py  resultado → resposta em linguagem natural + sugestão de gráfico
     services/chart_spec.py     valida a sugestão de gráfico / regra fixa
+    projecao/                  algoritmo de previsão do notebook (ver "Projeção do próximo semestre")
     services/llm.py            cliente OpenAI atrás de um protocolo (fácil de trocar)
   scripts/build_database.py CSV → data/sigadash.db
   tests/                    pytest (LLM falso)

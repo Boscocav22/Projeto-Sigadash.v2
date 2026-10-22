@@ -9,6 +9,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
     max_tentativas_sql: int = 2      # gera + 1 correção a partir do erro
     max_historico: int = 6           # mensagens anteriores usadas como contexto
 
+    # Projeção (algoritmo do notebook regress_copy_6.ipynb), calculada ao iniciar a API
+    projecao_ativa: bool = True
+    projecao_csv_path: Path = ROOT_DIR / "public" / "data" / "df_tabela_final.csv"
+    projecao_cache_path: Path = BACKEND_DIR / "data" / "projecao_cache.json"
+    projecao_periodos_ignorados: str = "2025.1,2025.2"  # poucos alunos; fora do treino e da coorte-base
+
     # Origens separadas por vírgula; "*" libera todas.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -42,6 +49,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def projecao_periodos_ignorados_lista(self) -> list[str]:
+        return [p.strip() for p in self.projecao_periodos_ignorados.split(",") if p.strip()]
 
 
 @lru_cache

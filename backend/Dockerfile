@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY python/ python/
 COPY public/data/df_tabela_final.csv public/data/df_tabela_final.csv
 COPY backend/ backend/
-RUN python backend/scripts/build_database.py && rm public/data/df_tabela_final.csv
+# O CSV continua na imagem: a projeção (algoritmo de previsão) é calculada a partir dele ao iniciar.
+RUN python backend/scripts/build_database.py
 
 WORKDIR /app/backend
 EXPOSE 8000

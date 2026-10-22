@@ -5,6 +5,7 @@ pydantic-settings>=2.3
 openai>=1.40
 sqlglot>=25.0
 pandas>=2.0
+scikit-learn>=1.5
 
 # testes
 pytest>=8.0
